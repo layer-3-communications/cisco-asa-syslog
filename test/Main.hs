@@ -1,3 +1,4 @@
+{-# language DuplicateRecordFields #-}
 {-# language NamedFieldPuns #-}
 
 import Cisco.Asa.Syslog
@@ -20,6 +21,12 @@ main = do
     Just (M302016 P302016{bytes}) -> do
       assert "bytes" (bytes == 390)
     Just _ -> fail "Decoded message B incorrectly"
+  putStrLn "Test C"
+  case decode msgC of
+    Nothing -> fail "Could not decode message C"
+    Just (M302015 P302015{number}) -> do
+      assert "number" (number == 64659852)
+    Just _ -> fail "Decoded message C incorrectly"
   putStrLn "Finished"
 
 assert :: String -> Bool -> IO ()
@@ -30,3 +37,6 @@ msgA = Bytes.fromLatinString "%ASA-6-106100: access-list public denied tcp Priva
 
 msgB :: Bytes
 msgB = Bytes.fromLatinString "%ASA-6-302016: Teardown UDP connection 61355178 for foo:10.65.55.198/137 to bar:172.16.17.40/137 duration 0:02:01 bytes 390"
+
+msgC :: Bytes
+msgC = Bytes.fromLatinString "%ASA-6-302015: Built outbound UDP connection 64659852 for outside:8.8.8.8/53 (8.8.8.8/53) to traffic:10.66.106.13/3905 (192.0.2.20/3905)"

@@ -6,6 +6,7 @@ module Cisco.Asa.Syslog
   ( Message(..)
   , P106100(..)
   , P302016(..)
+  , P302015(..)
   , Endpoint(..)
   , decode
   ) where
@@ -25,6 +26,7 @@ import qualified Net.IP as IP
 data Message
   = M106100 !P106100
   | M302016 !P302016
+  | M302015 !P302015
 
 data P106100 = P106100
   { id :: {-# UNPACK #-} !Bytes
@@ -47,6 +49,12 @@ data P302016 = P302016
   , bytes :: !Word64
   }
 
+data P302015 = P302015
+  { number :: {-# UNPACK #-} !Word64
+  , source :: !Endpoint
+  , destination :: !Endpoint
+  }
+
 decode :: Bytes -> Maybe Message
 decode = Parser.parseBytesMaybe parser
 
@@ -61,6 +69,7 @@ parser = do
     6 -> case msgNum of
       106100 -> M106100 <$> parser106100
       302016 -> M302016 <$> parser302016
+      302015 -> M302015 <$> parser302015
       _ -> Parser.fail ()
     _ -> Parser.fail ()
 
@@ -109,3 +118,17 @@ parser302016 = do
   bytes <- Latin.decWord64 ()
   pure P302016{number,source,destination,bytes}
 
+-- Discards the NAT addresses.
+parser302015 :: Parser () s P302015
+parser302015 = do
+  Parser.cstring () (Ptr "Built outbound UDP connection "#)
+  number <- Latin.decWord64 ()
+  Parser.cstring () (Ptr " for "#)
+  source <- parserEndpointAlt
+  Latin.char2 () ' ' '('
+  Latin.skipTrailedBy () ')'
+  Parser.cstring () (Ptr " to "#)
+  destination <- parserEndpointAlt
+  Latin.char2 () ' ' '('
+  Latin.skipTrailedBy () ')'
+  pure P302015{number,source,destination}
