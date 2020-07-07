@@ -34,3 +34,4 @@ test-suite test
     , base >=4.12.0.0 && <5
     , byteslice >=0.2
     , cisco-asa-syslog
+    , ip

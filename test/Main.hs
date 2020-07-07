@@ -5,6 +5,8 @@ import Cisco.Asa.Syslog
 import Data.Bytes (Bytes)
 
 import qualified Data.Bytes as Bytes
+import qualified Net.IP as IP
+import qualified Net.IPv4 as IPv4
 
 main :: IO ()
 main = do
@@ -27,6 +29,16 @@ main = do
     Just (M302015 P302015{number}) -> do
       assert "number" (number == 64659852)
     Just _ -> fail "Decoded message C incorrectly"
+  putStrLn "Test D"
+  case decode msgD of
+    Nothing -> fail "Could not decode message D"
+    Just (M305012 P305012{real}) -> do
+      assert "real" $ real == Endpoint
+        { interface = Bytes.fromLatinString "traffic"
+        , address = IP.fromIPv4 (IPv4.fromOctets 10 67 101 21)
+        , port = 12395
+        }
+    Just _ -> fail "Decoded message D incorrectly"
   putStrLn "Finished"
 
 assert :: String -> Bool -> IO ()
@@ -40,3 +52,6 @@ msgB = Bytes.fromLatinString "%ASA-6-302016: Teardown UDP connection 61355178 fo
 
 msgC :: Bytes
 msgC = Bytes.fromLatinString "%ASA-6-302015: Built outbound UDP connection 64659852 for outside:8.8.8.8/53 (8.8.8.8/53) to traffic:10.66.106.13/3905 (192.0.2.20/3905)"
+
+msgD :: Bytes
+msgD = Bytes.fromLatinString "%ASA-6-305012: Teardown dynamic UDP translation from traffic:10.67.101.21/12395 to outside:192.0.2.201/12395 duration 0:00:00"

@@ -7,6 +7,7 @@ module Cisco.Asa.Syslog
   , P106100(..)
   , P302016(..)
   , P302015(..)
+  , P305012(..)
   , Endpoint(..)
   , decode
   ) where
@@ -27,6 +28,7 @@ data Message
   = M106100 !P106100
   | M302016 !P302016
   | M302015 !P302015
+  | M305012 !P305012
 
 data P106100 = P106100
   { id :: {-# UNPACK #-} !Bytes
@@ -40,7 +42,7 @@ data Endpoint = Endpoint
   { interface :: {-# UNPACK #-} !Bytes
   , address :: {-# UNPACK #-} !IP
   , port :: {-# UNPACK #-} !Word16
-  }
+  } deriving (Eq)
 
 data P302016 = P302016
   { number :: {-# UNPACK #-} !Word64
@@ -53,6 +55,13 @@ data P302015 = P302015
   { number :: {-# UNPACK #-} !Word64
   , source :: !Endpoint
   , destination :: !Endpoint
+  }
+
+data P305012 = P305012
+  { protocol :: {-# UNPACK #-} !Bytes
+    -- ^ TCP, UDP, or ICMP
+  , real :: !Endpoint
+  , mapped :: !Endpoint
   }
 
 decode :: Bytes -> Maybe Message
@@ -70,6 +79,7 @@ parser = do
       106100 -> M106100 <$> parser106100
       302016 -> M302016 <$> parser302016
       302015 -> M302015 <$> parser302015
+      305012 -> M305012 <$> parser305012
       _ -> Parser.fail ()
     _ -> Parser.fail ()
 
@@ -132,3 +142,15 @@ parser302015 = do
   Latin.char2 () ' ' '('
   Latin.skipTrailedBy () ')'
   pure P302015{number,source,destination}
+
+parser305012 :: Parser () s P305012
+parser305012 = do
+  Parser.cstring () (Ptr "Teardown "#)
+  Latin.skipTrailedBy () ' ' -- keyword is: static or dynamic
+  protocol <- Parser.takeTrailedBy () 0x20
+  Parser.cstring () (Ptr "translation from "#)
+  real <- parserEndpointAlt
+  Parser.cstring () (Ptr " to "#)
+  mapped <- parserEndpointAlt
+  Parser.cstring () (Ptr " duration "#)
+  pure P305012{protocol,real,mapped}
