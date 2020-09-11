@@ -5,6 +5,7 @@
 module Cisco.Asa.Syslog
   ( Message(..)
   , P106100(..)
+  , P302014(..)
   , P302016(..)
   , P302015(..)
   , P305012(..)
@@ -16,7 +17,7 @@ import Prelude hiding (id)
 
 import Data.Bytes (Bytes)
 import Data.Bytes.Parser (Parser)
-import Data.Word (Word16,Word64)
+import Data.Word (Word8,Word16,Word64)
 import GHC.Exts (Ptr(Ptr))
 import Net.Types (IP)
 
@@ -26,9 +27,15 @@ import qualified Net.IP as IP
 
 data Message
   = M106100 !P106100
+    -- ^ These may be TCP, UDP, or ICMP.
   | M302016 !P302016
+    -- ^ These are always UDP.
   | M302015 !P302015
+    -- ^ These are always UDP.
   | M305012 !P305012
+    -- ^ These may be TCP, UDP, or ICMP.
+  | M302014 !P302014
+    -- ^ These are always TCP.
 
 data P106100 = P106100
   { id :: {-# UNPACK #-} !Bytes
@@ -48,6 +55,7 @@ data P302016 = P302016
   { number :: {-# UNPACK #-} !Word64
   , source :: !Endpoint
   , destination :: !Endpoint
+  , duration :: {-# UNPACK #-} !Duration
   , bytes :: !Word64
   }
 
@@ -64,6 +72,20 @@ data P305012 = P305012
   , mapped :: !Endpoint
   }
 
+data P302014 = P302014
+  { number :: {-# UNPACK #-} !Word64
+  , source :: !Endpoint
+  , destination :: !Endpoint
+  , duration :: {-# UNPACK #-} !Duration
+  , bytes :: !Word64
+  }
+
+data Duration = Duration
+  { hours :: !Word64
+  , minutes :: !Word8
+  , seconds :: !Word8
+  }
+
 decode :: Bytes -> Maybe Message
 decode = Parser.parseBytesMaybe parser
 
@@ -77,6 +99,7 @@ parser = do
   case sev of
     6 -> case msgNum of
       106100 -> M106100 <$> parser106100
+      302014 -> M302014 <$> parser302014
       302016 -> M302016 <$> parser302016
       302015 -> M302015 <$> parser302015
       305012 -> M305012 <$> parser305012
@@ -114,6 +137,22 @@ parserEndpointAlt = do
   port <- Latin.decWord16 ()
   pure Endpoint{interface,address,port}
 
+parser302014 :: Parser () s P302014
+parser302014 = do
+  Parser.cstring () (Ptr "Teardown TCP connection "#)
+  number <- Latin.decWord64 ()
+  Parser.cstring () (Ptr " for "#)
+  source <- parserEndpointAlt
+  Parser.cstring () (Ptr " to "#)
+  destination <- parserEndpointAlt
+  Parser.cstring () (Ptr " duration "#)
+  duration <- parserDuration
+  Parser.cstring () (Ptr " bytes "#)
+  bytes <- Latin.decWord64 ()
+  -- Ignore reason for teardown and initiator of teardown. Support
+  -- for this can always be added later if needed. 
+  pure P302014{number,source,destination,duration,bytes}
+
 parser302016 :: Parser () s P302016
 parser302016 = do
   Parser.cstring () (Ptr "Teardown UDP connection "#)
@@ -123,10 +162,10 @@ parser302016 = do
   Parser.cstring () (Ptr " to "#)
   destination <- parserEndpointAlt
   Parser.cstring () (Ptr " duration "#)
-  Parser.skipTrailedBy () 0x20
-  Parser.cstring () (Ptr "bytes "#)
+  duration <- parserDuration
+  Parser.cstring () (Ptr " bytes "#)
   bytes <- Latin.decWord64 ()
-  pure P302016{number,source,destination,bytes}
+  pure P302016{number,source,destination,duration,bytes}
 
 -- Discards the NAT addresses.
 parser302015 :: Parser () s P302015
@@ -154,3 +193,12 @@ parser305012 = do
   mapped <- parserEndpointAlt
   Parser.cstring () (Ptr " duration "#)
   pure P305012{protocol,real,mapped}
+
+parserDuration :: Parser () s Duration
+parserDuration = do
+  hours <- Latin.decWord64 ()
+  Latin.char () ':'
+  minutes <- Latin.decWord8 () 
+  Latin.char () ':'
+  seconds <- Latin.decWord8 () 
+  pure Duration{hours,minutes,seconds}

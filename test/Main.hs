@@ -39,6 +39,12 @@ main = do
         , port = 12395
         }
     Just _ -> fail "Decoded message D incorrectly"
+  putStrLn "Test E"
+  case decode msgE of
+    Nothing -> fail "Could not decode message E"
+    Just (M302014 P302014{bytes}) -> do
+      assert "bytes" (bytes == 10316)
+    Just _ -> fail "Decoded message E incorrectly"
   putStrLn "Finished"
 
 assert :: String -> Bool -> IO ()
@@ -55,3 +61,7 @@ msgC = Bytes.fromLatinString "%ASA-6-302015: Built outbound UDP connection 64659
 
 msgD :: Bytes
 msgD = Bytes.fromLatinString "%ASA-6-305012: Teardown dynamic UDP translation from traffic:10.67.101.21/12395 to outside:192.0.2.201/12395 duration 0:00:00"
+
+msgE :: Bytes
+msgE = Bytes.fromLatinString "%ASA-6-302014: Teardown TCP connection 142097270 for outside:192.0.2.136/443 to traffic:192.0.2.50/52310 duration 0:00:30 bytes 10316 TCP FINs from traffic"
+
