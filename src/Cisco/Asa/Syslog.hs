@@ -1,10 +1,12 @@
 {-# language DuplicateRecordFields #-}
+{-# language LambdaCase #-}
 {-# language MagicHash #-}
 {-# language NamedFieldPuns #-}
 
 module Cisco.Asa.Syslog
   ( Message(..)
   , P106100(..)
+  , P302013(..)
   , P302014(..)
   , P302016(..)
   , P302015(..)
@@ -37,6 +39,8 @@ data Message
     -- ^ These may be TCP, UDP, or ICMP.
   | M302014 !P302014
     -- ^ These are always TCP.
+  | M302013 !P302013
+    -- ^ These are always TCP.
 
 data P106100 = P106100
   { id :: {-# UNPACK #-} !Bytes
@@ -54,16 +58,16 @@ data Endpoint = Endpoint
 
 data P302016 = P302016
   { number :: {-# UNPACK #-} !Word64
-  , source :: !Endpoint
   , destination :: !Endpoint
+  , source :: !Endpoint
   , duration :: {-# UNPACK #-} !Duration
   , bytes :: !Word64
   }
 
 data P302015 = P302015
   { number :: {-# UNPACK #-} !Word64
-  , source :: !Endpoint
   , destination :: !Endpoint
+  , source :: !Endpoint
   }
 
 data P305012 = P305012
@@ -75,10 +79,16 @@ data P305012 = P305012
 
 data P302014 = P302014
   { number :: {-# UNPACK #-} !Word64
-  , source :: !Endpoint
   , destination :: !Endpoint
+  , source :: !Endpoint
   , duration :: {-# UNPACK #-} !Duration
   , bytes :: !Word64
+  }
+  
+data P302013 = P302013
+  { number :: {-# UNPACK #-} !Word64
+  , destination :: !Endpoint
+  , source :: !Endpoint
   }
 
 data Duration = Duration
@@ -100,6 +110,7 @@ parser = do
   case sev of
     6 -> case msgNum of
       106100 -> M106100 <$> parser106100
+      302013 -> M302013 <$> parser302013
       302014 -> M302014 <$> parser302014
       302016 -> M302016 <$> parser302016
       302015 -> M302015 <$> parser302015
@@ -143,9 +154,9 @@ parser302014 = do
   Parser.cstring () (Ptr "Teardown TCP connection "#)
   number <- Latin.decWord64 ()
   Parser.cstring () (Ptr " for "#)
-  source <- parserEndpointAlt
-  Parser.cstring () (Ptr " to "#)
   destination <- parserEndpointAlt
+  Parser.cstring () (Ptr " to "#)
+  source <- parserEndpointAlt
   Parser.cstring () (Ptr " duration "#)
   duration <- parserDuration
   Parser.cstring () (Ptr " bytes "#)
@@ -154,14 +165,36 @@ parser302014 = do
   -- for this can always be added later if needed. 
   pure P302014{number,source,destination,duration,bytes}
 
+parser302013 :: Parser () s P302013
+parser302013 = do
+  Parser.cstring () (Ptr "Built "#)
+  Latin.any () >>= \case
+    'i' -> Parser.cstring () (Ptr "nbound TCP connection "#)
+    'o' -> Parser.cstring () (Ptr "utbound TCP connection "#)
+    _ -> Parser.fail ()
+  number <- Latin.decWord64 ()
+  Parser.cstring () (Ptr " for "#)
+  destination <- parserEndpointAlt
+  -- Discards NAT address
+  Latin.char2 () ' ' '('
+  Latin.skipTrailedBy () ')'
+  Parser.cstring () (Ptr " to "#)
+  source <- parserEndpointAlt
+  -- Discards NAT address
+  Latin.char2 () ' ' '('
+  Latin.skipTrailedBy () ')'
+  -- Ignore reason for teardown and initiator of teardown. Support
+  -- for this can always be added later if needed. 
+  pure P302013{number,source,destination}
+
 parser302016 :: Parser () s P302016
 parser302016 = do
   Parser.cstring () (Ptr "Teardown UDP connection "#)
   number <- Latin.decWord64 ()
   Parser.cstring () (Ptr " for "#)
-  source <- parserEndpointAlt
-  Parser.cstring () (Ptr " to "#)
   destination <- parserEndpointAlt
+  Parser.cstring () (Ptr " to "#)
+  source <- parserEndpointAlt
   Parser.cstring () (Ptr " duration "#)
   duration <- parserDuration
   Parser.cstring () (Ptr " bytes "#)
@@ -174,11 +207,11 @@ parser302015 = do
   Parser.cstring () (Ptr "Built outbound UDP connection "#)
   number <- Latin.decWord64 ()
   Parser.cstring () (Ptr " for "#)
-  source <- parserEndpointAlt
+  destination <- parserEndpointAlt
   Latin.char2 () ' ' '('
   Latin.skipTrailedBy () ')'
   Parser.cstring () (Ptr " to "#)
-  destination <- parserEndpointAlt
+  source <- parserEndpointAlt
   Latin.char2 () ' ' '('
   Latin.skipTrailedBy () ')'
   pure P302015{number,source,destination}
