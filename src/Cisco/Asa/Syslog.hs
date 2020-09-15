@@ -167,26 +167,20 @@ decode = Parser.parseBytesMaybe parser
 parser :: Parser () s Message
 parser = do
   Latin.char5 () '%' 'A' 'S' 'A' '-'
-  sev <- Latin.decWord ()
+  _ <- Latin.decWord ()
   Latin.char () '-'
   msgNum <- Latin.decWord ()
   Latin.char2 () ':' ' '
-  case sev of
-    6 -> case msgNum of
-      106100 -> M106100 <$> parser106100
-      106015 -> M106015 <$> parser106015
-      302013 -> M302013 <$> parser302013
-      302014 -> M302014 <$> parser302014
-      302016 -> M302016 <$> parser302016
-      302015 -> M302015 <$> parser302015
-      305012 -> M305012 <$> parser305012
-      _ -> Parser.fail ()
-    5 -> case msgNum of
-      111010 -> M111010 <$> parser111010
-      _ -> Parser.fail ()
-    4 -> case msgNum of
-      106023 -> M106023 <$> parser106023
-      _ -> Parser.fail ()
+  case msgNum of
+    106015 -> M106015 <$> parser106015
+    106023 -> M106023 <$> parser106023
+    106100 -> M106100 <$> parser106100
+    111010 -> M111010 <$> parser111010
+    302013 -> M302013 <$> parser302013
+    302014 -> M302014 <$> parser302014
+    302015 -> M302015 <$> parser302015
+    302016 -> M302016 <$> parser302016
+    305012 -> M305012 <$> parser305012
     _ -> Parser.fail ()
 
 parser106100 :: Parser () s P106100
