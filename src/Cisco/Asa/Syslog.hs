@@ -5,13 +5,16 @@
 
 module Cisco.Asa.Syslog
   ( Message(..)
+  , P106015(..)
   , P106100(..)
+  , P106023(..)
   , P111010(..)
   , P302013(..)
   , P302014(..)
   , P302016(..)
   , P302015(..)
   , P305012(..)
+  , Peer(..)
   , Endpoint(..)
   , Duration(..)
   , Direction(..)
@@ -45,6 +48,10 @@ data Message
     -- ^ These are always TCP.
   | M111010 !P111010
     -- ^ These are not network traffic.
+  | M106023 !P106023
+    -- ^ Denied network traffic. At least TCP and UDP.
+  | M106015 !P106015
+    -- ^ Denied TCP connections.
 
 -- | Cisco uses the keywords @inbound@ and @outbound@ in some logs. The
 -- keyword @inbound@ means that a connection was initiated from @outside@
@@ -62,6 +69,19 @@ data Message
 -- way to interpret them.
 data Direction = Inbound | Outbound
 
+-- | An IP address and a port.
+data Peer = Peer
+  { address :: {-# UNPACK #-} !IP
+  , port :: {-# UNPACK #-} !Word16
+  } deriving (Eq)
+
+-- | An IP address, a port, and an interface name.
+data Endpoint = Endpoint
+  { interface :: {-# UNPACK #-} !Bytes
+  , address :: {-# UNPACK #-} !IP
+  , port :: {-# UNPACK #-} !Word16
+  } deriving (Eq)
+
 data P106100 = P106100
   { id :: {-# UNPACK #-} !Bytes
   , action :: {-# UNPACK #-} !Bytes
@@ -69,12 +89,6 @@ data P106100 = P106100
   , source :: !Endpoint
   , destination :: !Endpoint
   }
-
-data Endpoint = Endpoint
-  { interface :: {-# UNPACK #-} !Bytes
-  , address :: {-# UNPACK #-} !IP
-  , port :: {-# UNPACK #-} !Word16
-  } deriving (Eq)
 
 data P302016 = P302016
   { number :: {-# UNPACK #-} !Word64
@@ -85,9 +99,15 @@ data P302016 = P302016
   }
 
 data P302015 = P302015
-  { number :: {-# UNPACK #-} !Word64
-  , destination :: !Endpoint
-  , source :: !Endpoint
+  { direction :: !Direction
+  , number :: {-# UNPACK #-} !Word64
+  , for :: !Endpoint
+  , to :: !Endpoint
+  }
+
+data P106015 = P106015
+  { from :: !Peer
+  , to :: !Peer
   }
 
 data P305012 = P305012
@@ -95,6 +115,14 @@ data P305012 = P305012
     -- ^ TCP, UDP, or ICMP
   , real :: !Endpoint
   , mapped :: !Endpoint
+  }
+
+data P106023 = P106023
+  { protocol :: {-# UNPACK #-} !Bytes
+  , source :: !Endpoint
+  , destination :: !Endpoint
+  , acl :: {-# UNPACK #-} !Bytes
+    -- ^ ACL ID
   }
 
 -- | Note: From a 302014 log alone, it is not possible to determine
@@ -146,6 +174,7 @@ parser = do
   case sev of
     6 -> case msgNum of
       106100 -> M106100 <$> parser106100
+      106015 -> M106015 <$> parser106015
       302013 -> M302013 <$> parser302013
       302014 -> M302014 <$> parser302014
       302016 -> M302016 <$> parser302016
@@ -154,6 +183,9 @@ parser = do
       _ -> Parser.fail ()
     5 -> case msgNum of
       111010 -> M111010 <$> parser111010
+      _ -> Parser.fail ()
+    4 -> case msgNum of
+      106023 -> M106023 <$> parser106023
       _ -> Parser.fail ()
     _ -> Parser.fail ()
 
@@ -167,6 +199,23 @@ parser106100 = do
   Latin.char4 () ' ' '-' '>' ' '
   destination <- parserEndpoint
   pure P106100{id,action,protocol,source,destination}
+
+parser106015 :: Parser () s P106015
+parser106015 = do
+  Parser.cstring () (Ptr "Deny TCP (no connection) from "#)
+  from <- parserPeer
+  Parser.cstring () (Ptr " to "#)
+  to <- parserPeer
+  -- Discard flags and interface. Possibly remedy this later.
+  pure P106015{from,to}
+
+-- Looks for endpoint as: ipaddr/port
+parserPeer :: Parser () s Peer
+parserPeer = do
+  address <- IP.parserUtf8Bytes ()
+  Latin.char () '/'
+  port <- Latin.decWord16 ()
+  pure Peer{address,port}
 
 -- Looks for endpoint as: intf/ipaddr(port)
 parserEndpoint :: Parser () s Endpoint
@@ -207,14 +256,8 @@ parser302014 = do
 parser302013 :: Parser () s P302013
 parser302013 = do
   Parser.cstring () (Ptr "Built "#)
-  direction <- Latin.any () >>= \case
-    'i' -> do
-      Parser.cstring () (Ptr "nbound TCP connection "#)
-      pure Inbound
-    'o' -> do
-      Parser.cstring () (Ptr "utbound TCP connection "#)
-      pure Outbound
-    _ -> Parser.fail ()
+  direction <- directionParser
+  Parser.cstring () (Ptr " TCP connection "#)
   number <- Latin.decWord64 ()
   Parser.cstring () (Ptr " for "#)
   for <- parserEndpointAlt
@@ -226,9 +269,35 @@ parser302013 = do
   -- Discards NAT address
   Latin.char2 () ' ' '('
   Latin.skipTrailedBy () ')'
-  -- Ignore reason for teardown and initiator of teardown. Support
-  -- for this can always be added later if needed. 
   pure P302013{number,direction,for,to}
+
+directionParser :: Parser () s Direction
+directionParser = Latin.any () >>= \case
+  'i' -> do
+    Parser.cstring () (Ptr "nbound"#)
+    pure Inbound
+  'o' -> do
+    Parser.cstring () (Ptr "utbound"#)
+    pure Outbound
+  _ -> Parser.fail ()
+
+parser302015 :: Parser () s P302015
+parser302015 = do
+  Parser.cstring () (Ptr "Built "#)
+  direction <- directionParser
+  Parser.cstring () (Ptr " UDP connection "#)
+  number <- Latin.decWord64 ()
+  Parser.cstring () (Ptr " for "#)
+  for <- parserEndpointAlt
+  -- Discards NAT address
+  Latin.char2 () ' ' '('
+  Latin.skipTrailedBy () ')'
+  Parser.cstring () (Ptr " to "#)
+  to <- parserEndpointAlt
+  -- Discards NAT address
+  Latin.char2 () ' ' '('
+  Latin.skipTrailedBy () ')'
+  pure P302015{number,direction,for,to}
 
 parser302016 :: Parser () s P302016
 parser302016 = do
@@ -243,21 +312,6 @@ parser302016 = do
   Parser.cstring () (Ptr " bytes "#)
   bytes <- Latin.decWord64 ()
   pure P302016{number,source,destination,duration,bytes}
-
--- Discards the NAT addresses.
-parser302015 :: Parser () s P302015
-parser302015 = do
-  Parser.cstring () (Ptr "Built outbound UDP connection "#)
-  number <- Latin.decWord64 ()
-  Parser.cstring () (Ptr " for "#)
-  destination <- parserEndpointAlt
-  Latin.char2 () ' ' '('
-  Latin.skipTrailedBy () ')'
-  Parser.cstring () (Ptr " to "#)
-  source <- parserEndpointAlt
-  Latin.char2 () ' ' '('
-  Latin.skipTrailedBy () ')'
-  pure P302015{number,source,destination}
 
 parser305012 :: Parser () s P305012
 parser305012 = do
@@ -282,6 +336,18 @@ parser111010 = do
   Parser.cstring () (Ptr ", executed '"#)
   command <- Parser.takeTrailedBy () 0x27 -- single quote
   pure P111010{username,application,managementStation,command}
+
+parser106023 :: Parser () s P106023
+parser106023 = do
+  Parser.cstring () (Ptr "Deny "#)
+  protocol <- Parser.takeTrailedBy () 0x20
+  Parser.cstring () (Ptr "src "#)
+  source <- parserEndpointAlt
+  Parser.cstring () (Ptr " dst "#)
+  destination <- parserEndpointAlt
+  Parser.cstring () (Ptr " by access-group \""#)
+  acl <- Parser.takeTrailedBy () 0x22 -- double quote
+  pure P106023{protocol,source,destination,acl}
 
 parserDuration :: Parser () s Duration
 parserDuration = do

@@ -56,6 +56,27 @@ main = do
     Just (M111010 P111010{command}) ->
       assert "command" (command == Bytes.fromLatinString "no logging message 304001")
     Just _ -> fail "Decoded message G incorrectly"
+  putStrLn "Test H"
+  case decode msgH of
+    Nothing -> fail "Could not decode message H"
+    Just (M106023 P106023{acl}) ->
+      assert "acl" (acl == Bytes.fromLatinString "inside")
+    Just _ -> fail "Decoded message H incorrectly"
+  putStrLn "Test I"
+  case decode msgI of
+    Nothing -> fail "Could not decode message I"
+    Just (M302015 P302015{number}) -> do
+      assert "number" (number == 154464809)
+    Just _ -> fail "Decoded message I incorrectly"
+  putStrLn "Test J"
+  case decode msgJ of
+    Nothing -> fail "Could not decode message J"
+    Just (M106015 P106015{from}) -> do
+      assert "from" (from == Peer
+        {address = IP.fromIPv4 (IPv4.fromOctets 192 0 2 31)
+        ,port = 61458
+        })
+    Just _ -> fail "Decoded message J incorrectly"
   putStrLn "Finished"
 
 assert :: String -> Bool -> IO ()
@@ -81,3 +102,13 @@ msgF = Bytes.fromLatinString "%ASA-6-302013: Built inbound TCP connection 142561
 
 msgG :: Bytes
 msgG = Bytes.fromLatinString "%ASA-5-111010: User 'enable_15', running 'CLI' from IP 192.0.2.12, executed 'no logging message 304001'"
+
+msgH :: Bytes
+msgH = Bytes.fromLatinString "%ASA-4-106023: Deny udp src Inside:192.0.2.15/57462 dst Public:192.0.2.65/5558 by access-group \"inside\" [0xb17391c9, 0xfbd90cb4]"
+
+msgI :: Bytes
+msgI = Bytes.fromLatinString "%ASA-6-302015: Built inbound UDP connection 154464809 for traffic:192.0.2.74/123 (192.0.2.74/123) to inside1:172.16.18.49/123 (172.16.18.49/123)"
+
+msgJ :: Bytes
+msgJ = Bytes.fromLatinString "%ASA-6-106015: Deny TCP (no connection) from 192.0.2.31/61458 to 192.0.2.38/443 flags RST  on interface traffic"
+
