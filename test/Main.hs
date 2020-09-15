@@ -50,6 +50,12 @@ main = do
     Nothing -> fail "Could not decode message F"
     Just (M302013 P302013{}) -> pure ()
     Just _ -> fail "Decoded message F incorrectly"
+  putStrLn "Test G"
+  case decode msgG of
+    Nothing -> fail "Could not decode message G"
+    Just (M111010 P111010{command}) ->
+      assert "command" (command == Bytes.fromLatinString "no logging message 304001")
+    Just _ -> fail "Decoded message G incorrectly"
   putStrLn "Finished"
 
 assert :: String -> Bool -> IO ()
@@ -72,3 +78,6 @@ msgE = Bytes.fromLatinString "%ASA-6-302014: Teardown TCP connection 142097270 f
 
 msgF :: Bytes
 msgF = Bytes.fromLatinString "%ASA-6-302013: Built inbound TCP connection 142561430 for traffic:192.0.2.33/53716 (192.0.2.59/53716) to inside1:192.0.2.98/55443 (192.0.2.163/55443)"
+
+msgG :: Bytes
+msgG = Bytes.fromLatinString "%ASA-5-111010: User 'enable_15', running 'CLI' from IP 192.0.2.12, executed 'no logging message 304001'"

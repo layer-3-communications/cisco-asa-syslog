@@ -6,6 +6,7 @@
 module Cisco.Asa.Syslog
   ( Message(..)
   , P106100(..)
+  , P111010(..)
   , P302013(..)
   , P302014(..)
   , P302016(..)
@@ -41,6 +42,8 @@ data Message
     -- ^ These are always TCP.
   | M302013 !P302013
     -- ^ These are always TCP.
+  | M111010 !P111010
+    -- ^ These are not network traffic.
 
 data P106100 = P106100
   { id :: {-# UNPACK #-} !Bytes
@@ -91,6 +94,15 @@ data P302013 = P302013
   , source :: !Endpoint
   }
 
+-- Example from Cisco docs:
+-- %ASA-5-111010: User username , running application-name from IP ip addr , executed cmd 
+data P111010 = P111010
+  { username :: {-# UNPACK #-} !Bytes
+  , application :: {-# UNPACK #-} !Bytes
+  , managementStation :: {-# UNPACK #-} !IP
+  , command :: {-# UNPACK #-} !Bytes
+  }
+
 data Duration = Duration
   { hours :: !Word64
   , minutes :: !Word8
@@ -115,6 +127,9 @@ parser = do
       302016 -> M302016 <$> parser302016
       302015 -> M302015 <$> parser302015
       305012 -> M305012 <$> parser305012
+      _ -> Parser.fail ()
+    5 -> case msgNum of
+      111010 -> M111010 <$> parser111010
       _ -> Parser.fail ()
     _ -> Parser.fail ()
 
@@ -227,6 +242,18 @@ parser305012 = do
   mapped <- parserEndpointAlt
   Parser.cstring () (Ptr " duration "#)
   pure P305012{protocol,real,mapped}
+
+parser111010 :: Parser () s P111010
+parser111010 = do
+  Parser.cstring () (Ptr "User '"#)
+  username <- Parser.takeTrailedBy () 0x27 -- single quote
+  Parser.cstring () (Ptr ", running '"#)
+  application <- Parser.takeTrailedBy () 0x27 -- single quote
+  Parser.cstring () (Ptr " from IP "#)
+  managementStation <- IP.parserUtf8Bytes ()
+  Parser.cstring () (Ptr ", executed '"#)
+  command <- Parser.takeTrailedBy () 0x27 -- single quote
+  pure P111010{username,application,managementStation,command}
 
 parserDuration :: Parser () s Duration
 parserDuration = do
