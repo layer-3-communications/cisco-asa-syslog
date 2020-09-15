@@ -45,6 +45,22 @@ data Message
   | M111010 !P111010
     -- ^ These are not network traffic.
 
+-- | Cisco uses the keywords @inbound@ and @outbound@ in some logs. The
+-- keyword @inbound@ means that a connection was initiated from @outside@
+-- (also a word with a special meaning). Similarly, @outbound@ means that
+-- a connection was initiated from @inside@. Direction is used to indicate
+-- who the server and client are in a TCP session. Consider:
+--
+-- > <166>%ASA-6-302013: Built inbound TCP connection 153620014 for outside:192.0.2.13/56813 (192.0.2.13/56813) to identity:192.0.2.241/443 (192.0.2.241/443)
+-- > <166>%ASA-6-302013: Built outbound TCP connection 153620015 for identity:192.0.2.229/443 (192.0.2.229/443) to outside:192.0.2.5/60134 (192.0.2.5/60134)
+--
+-- In the first log, @192.0.2.13/56813@ initiated the connection, but in the
+-- second log, @192.0.2.5/60134@ initiated the connection. Undoubtedly, this
+-- is a confusing way to do this, but it is how Cisco does it. Logs with
+-- @for@ and @to@ fields also have a @direction@ field that provides a
+-- way to interpret them.
+data Direction = Inbound | Outbound
+
 data P106100 = P106100
   { id :: {-# UNPACK #-} !Bytes
   , action :: {-# UNPACK #-} !Bytes
@@ -87,11 +103,12 @@ data P302014 = P302014
   , duration :: {-# UNPACK #-} !Duration
   , bytes :: !Word64
   }
-  
+
 data P302013 = P302013
   { number :: {-# UNPACK #-} !Word64
-  , destination :: !Endpoint
-  , source :: !Endpoint
+  , direction :: !Direction
+  , for :: !Endpoint
+  , to :: !Endpoint
   }
 
 -- Example from Cisco docs:
@@ -183,24 +200,28 @@ parser302014 = do
 parser302013 :: Parser () s P302013
 parser302013 = do
   Parser.cstring () (Ptr "Built "#)
-  Latin.any () >>= \case
-    'i' -> Parser.cstring () (Ptr "nbound TCP connection "#)
-    'o' -> Parser.cstring () (Ptr "utbound TCP connection "#)
+  direction <- Latin.any () >>= \case
+    'i' -> do
+      Parser.cstring () (Ptr "nbound TCP connection "#)
+      pure Inbound
+    'o' -> do
+      Parser.cstring () (Ptr "utbound TCP connection "#)
+      pure Outbound
     _ -> Parser.fail ()
   number <- Latin.decWord64 ()
   Parser.cstring () (Ptr " for "#)
-  destination <- parserEndpointAlt
+  for <- parserEndpointAlt
   -- Discards NAT address
   Latin.char2 () ' ' '('
   Latin.skipTrailedBy () ')'
   Parser.cstring () (Ptr " to "#)
-  source <- parserEndpointAlt
+  to <- parserEndpointAlt
   -- Discards NAT address
   Latin.char2 () ' ' '('
   Latin.skipTrailedBy () ')'
   -- Ignore reason for teardown and initiator of teardown. Support
   -- for this can always be added later if needed. 
-  pure P302013{number,source,destination}
+  pure P302013{number,direction,for,to}
 
 parser302016 :: Parser () s P302016
 parser302016 = do
