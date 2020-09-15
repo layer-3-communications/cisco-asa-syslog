@@ -97,10 +97,16 @@ data P305012 = P305012
   , mapped :: !Endpoint
   }
 
+-- | Note: From a 302014 log alone, it is not possible to determine
+-- which endpoint is the source and which endpoint is the destination.
+-- The only options are:
+--
+-- * Use the session number to match it with its corresponding 302013 log.
+-- * Guess that a low port number is the destination.
 data P302014 = P302014
   { number :: {-# UNPACK #-} !Word64
-  , destination :: !Endpoint
-  , source :: !Endpoint
+  , for :: !Endpoint
+  , to :: !Endpoint
   , duration :: {-# UNPACK #-} !Duration
   , bytes :: !Word64
   }
@@ -187,16 +193,16 @@ parser302014 = do
   Parser.cstring () (Ptr "Teardown TCP connection "#)
   number <- Latin.decWord64 ()
   Parser.cstring () (Ptr " for "#)
-  destination <- parserEndpointAlt
+  for <- parserEndpointAlt
   Parser.cstring () (Ptr " to "#)
-  source <- parserEndpointAlt
+  to <- parserEndpointAlt
   Parser.cstring () (Ptr " duration "#)
   duration <- parserDuration
   Parser.cstring () (Ptr " bytes "#)
   bytes <- Latin.decWord64 ()
   -- Ignore reason for teardown and initiator of teardown. Support
   -- for this can always be added later if needed. 
-  pure P302014{number,source,destination,duration,bytes}
+  pure P302014{number,for,to,duration,bytes}
 
 parser302013 :: Parser () s P302013
 parser302013 = do
