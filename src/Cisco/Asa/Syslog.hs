@@ -14,6 +14,7 @@ module Cisco.Asa.Syslog
   , P305012(..)
   , Endpoint(..)
   , Duration(..)
+  , Direction(..)
   , decode
   ) where
 
