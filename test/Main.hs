@@ -77,6 +77,12 @@ main = do
         ,port = 61458
         })
     Just _ -> fail "Decoded message J incorrectly"
+  putStrLn "Test K"
+  case decode msgK of
+    Nothing -> fail "Could not decode message K"
+    Just (M722036 P722036{destination}) -> do
+      assert "source" (destination == IP.fromIPv4 (IPv4.fromOctets 192 0 2 188))
+    Just _ -> fail "Decoded message K incorrectly"
   putStrLn "Finished"
 
 assert :: String -> Bool -> IO ()
@@ -112,3 +118,5 @@ msgI = Bytes.fromLatinString "%ASA-6-302015: Built inbound UDP connection 154464
 msgJ :: Bytes
 msgJ = Bytes.fromLatinString "%ASA-6-106015: Deny TCP (no connection) from 192.0.2.31/61458 to 192.0.2.38/443 flags RST  on interface traffic"
 
+msgK :: Bytes
+msgK = Bytes.fromLatinString "%ASA-6-722036: Group <MY-GRP> User <jdoe> IP <192.0.2.188> Transmitting large packet 1236 (threshold 1200)."

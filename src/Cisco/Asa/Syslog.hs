@@ -14,6 +14,7 @@ module Cisco.Asa.Syslog
   , P302016(..)
   , P302015(..)
   , P305012(..)
+  , P722036(..)
   , Peer(..)
   , Endpoint(..)
   , Duration(..)
@@ -21,7 +22,7 @@ module Cisco.Asa.Syslog
   , decode
   ) where
 
-import Prelude hiding (id)
+import Prelude hiding (id,length)
 
 import Data.Bytes (Bytes)
 import Data.Bytes.Parser (Parser)
@@ -52,6 +53,8 @@ data Message
     -- ^ Denied network traffic. At least TCP and UDP.
   | M106015 !P106015
     -- ^ Denied TCP connections.
+  | M722036 !P722036
+    -- ^ Transmitting large packet (UDP)
 
 -- | Cisco uses the keywords @inbound@ and @outbound@ in some logs. The
 -- keyword @inbound@ means that a connection was initiated from @outside@
@@ -155,6 +158,15 @@ data P111010 = P111010
   , command :: {-# UNPACK #-} !Bytes
   }
 
+-- Example from test suite: %ASA-6-722036: Group <MY-GRP> User <jdoe> IP <192.0.2.188> Transmitting large packet 1236 (threshold 1200).
+data P722036 = P722036
+  { group :: {-# UNPACK #-} !Bytes
+  , user :: {-# UNPACK #-} !Bytes
+  , destination :: {-# UNPACK #-} !IP
+  , length :: {-# UNPACK #-} !Word64
+  , threshold :: {-# UNPACK #-} !Word64
+  }
+
 data Duration = Duration
   { hours :: !Word64
   , minutes :: !Word8
@@ -181,6 +193,7 @@ parser = do
     302015 -> M302015 <$> parser302015
     302016 -> M302016 <$> parser302016
     305012 -> M305012 <$> parser305012
+    722036 -> M722036 <$> parser722036
     _ -> Parser.fail ()
 
 parser106100 :: Parser () s P106100
@@ -342,6 +355,20 @@ parser106023 = do
   Parser.cstring () (Ptr " by access-group \""#)
   acl <- Parser.takeTrailedBy () 0x22 -- double quote
   pure P106023{protocol,source,destination,acl}
+
+parser722036 :: Parser () s P722036
+parser722036 = do
+  Parser.cstring () (Ptr "Group <"#)
+  group <- Parser.takeTrailedBy () 0x3E
+  Parser.cstring () (Ptr " User <"#)
+  user <- Parser.takeTrailedBy () 0x3E
+  Parser.cstring () (Ptr " IP <"#)
+  destination <- IP.parserUtf8Bytes ()
+  Parser.cstring () (Ptr "> Transmitting large packet "#)
+  length <- Latin.decWord64 ()
+  Parser.cstring () (Ptr " (threshold "#)
+  threshold <- Latin.decWord64 ()
+  pure P722036{group,user,destination,length,threshold}
 
 parserDuration :: Parser () s Duration
 parserDuration = do
