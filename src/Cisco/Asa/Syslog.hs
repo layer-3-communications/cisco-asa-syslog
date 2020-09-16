@@ -95,8 +95,8 @@ data P106100 = P106100
 
 data P302016 = P302016
   { number :: {-# UNPACK #-} !Word64
-  , destination :: !Endpoint
-  , source :: !Endpoint
+  , for :: !Endpoint
+  , to :: !Endpoint
   , duration :: {-# UNPACK #-} !Duration
   , bytes :: !Word64
   }
@@ -311,14 +311,14 @@ parser302016 = do
   Parser.cstring () (Ptr "Teardown UDP connection "#)
   number <- Latin.decWord64 ()
   Parser.cstring () (Ptr " for "#)
-  destination <- parserEndpointAlt
+  for <- parserEndpointAlt
   Parser.cstring () (Ptr " to "#)
-  source <- parserEndpointAlt
+  to <- parserEndpointAlt
   Parser.cstring () (Ptr " duration "#)
   duration <- parserDuration
   Parser.cstring () (Ptr " bytes "#)
   bytes <- Latin.decWord64 ()
-  pure P302016{number,source,destination,duration,bytes}
+  pure P302016{number,for,to,duration,bytes}
 
 parser305012 :: Parser () s P305012
 parser305012 = do
