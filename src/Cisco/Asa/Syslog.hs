@@ -1,3 +1,4 @@
+{-# language BangPatterns #-}
 {-# language DuplicateRecordFields #-}
 {-# language LambdaCase #-}
 {-# language MagicHash #-}
@@ -24,14 +25,21 @@ module Cisco.Asa.Syslog
 
 import Prelude hiding (id,length)
 
+import Control.Monad.ST (runST)
+import Data.Foldable (foldl')
 import Data.Bytes (Bytes)
 import Data.Bytes.Parser (Parser)
+import Data.Text.Short (ShortText)
 import Data.Word (Word8,Word16,Word64)
+import Data.Primitive.Unlifted.Array (UnliftedArray)
 import GHC.Exts (Ptr(Ptr))
 import Net.Types (IP)
 
+import qualified Data.Bytes as Bytes
 import qualified Data.Bytes.Parser as Parser
 import qualified Data.Bytes.Parser.Latin as Latin
+import qualified Data.Primitive.Unlifted.Array as PM
+import qualified Data.Text.Short.Unsafe as TS
 import qualified Net.IP as IP
 
 data Message
@@ -111,6 +119,7 @@ data P302015 = P302015
 data P106015 = P106015
   { from :: !Peer
   , to :: !Peer
+  , tcpFlags :: {-# UNPACK #-} !(UnliftedArray ShortText)
   }
 
 data P305012 = P305012
@@ -213,8 +222,46 @@ parser106015 = do
   from <- parserPeer
   Parser.cstring () (Ptr " to "#)
   to <- parserPeer
-  -- Discard flags and interface. Possibly remedy this later.
-  pure P106015{from,to}
+  Parser.cstring () (Ptr " flags "#)
+  -- Flags are always uppercase.
+  rawFlags <- Parser.takeWhile (\w -> w == 0x20 || (w >= 0x41 && w <= 0x5A))
+  let tcpFlags = decodeTcpFlags rawFlags
+  -- Discard interface. Possibly remedy this later.
+  pure P106015{from,to,tcpFlags}
+
+-- Precondition: all bytes are in ASCII range
+decodeTcpFlags :: Bytes -> UnliftedArray ShortText
+decodeTcpFlags !everything =
+  let bldr = foldl'
+        (\acc b ->
+          let b' = Bytes.dropWhile (==0x20) (Bytes.dropWhileEnd (==0x20) b)
+           in if Bytes.null b'
+                then acc
+                else TextsCons (TS.fromShortByteStringUnsafe (Bytes.toShortByteString b')) acc
+        ) TextsNil (Bytes.split 0x20 everything)
+      !len = textsLen 0 bldr
+   in unsafeTextsToArray len bldr
+
+-- writes them backwards
+unsafeTextsToArray :: Int -> Texts -> UnliftedArray ShortText
+unsafeTextsToArray !sz xs0 = runST $ do
+  dst <- PM.unsafeNewUnliftedArray sz
+  let go !ix xs = case xs of
+        TextsNil -> case ix of
+          (-1) -> PM.unsafeFreezeUnliftedArray dst
+          _ -> errorWithoutStackTrace "Cisco.Asa.Syslog.unsafeTextsToArray: mistake"
+        TextsCons t ts -> do
+          PM.writeUnliftedArray dst ix t
+          go (ix - 1) ts
+  go (sz - 1) xs0
+
+textsLen :: Int -> Texts -> Int
+textsLen !acc TextsNil = acc
+textsLen !acc (TextsCons _ next) = textsLen (acc + 1) next
+
+data Texts
+  = TextsCons !ShortText !Texts
+  | TextsNil
 
 -- Looks for endpoint as: ipaddr/port
 parserPeer :: Parser () s Peer
