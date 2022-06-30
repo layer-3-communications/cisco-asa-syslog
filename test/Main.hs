@@ -92,6 +92,12 @@ main = do
     Just (M106015 P106015{tcpFlags}) -> do
       assert "tcpFlags" (tcpFlags == Exts.fromList [TS.pack "RST", TS.pack "ACK"])
     Just _ -> fail "Decoded message J incorrectly"
+  putStrLn "Test M"
+  case decode msgM of
+    Nothing -> fail "Could not decode message M"
+    Just (M302014 P302014{bytes}) -> do
+      assert "bytes" (bytes == 7141)
+    Just _ -> fail "Decoded message M incorrectly"
   putStrLn "Finished"
 
 assert :: String -> Bool -> IO ()
@@ -132,3 +138,6 @@ msgK = Latin1.fromString "%ASA-6-722036: Group <MY-GRP> User <jdoe> IP <192.0.2.
 
 msgL :: Bytes
 msgL = Latin1.fromString "%ASA-6-106015: Deny TCP (no connection) from 192.0.2.192/443 to 192.0.2.2/5323 flags RST ACK  on interface outside2"
+
+msgM :: Bytes
+msgM = Latin1.fromString "%ASA-6-302014: Teardown TCP connection 612395138 for outside2:192.0.2.230/57422(LOCAL\\JDoe) to inside:192.0.2.231/445 duration 0:00:16 bytes 7141 TCP Reset-O from outside2 (JDoe)"

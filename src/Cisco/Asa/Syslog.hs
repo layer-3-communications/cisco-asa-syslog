@@ -289,6 +289,10 @@ parserEndpointAlt = do
   address <- IP.parserUtf8Bytes ()
   Latin.char () '/'
   port <- Latin.decWord16 ()
+  -- Skip the username that sometimes comes after the port.
+  Latin.trySatisfy (=='(') >>= \case
+    True -> Latin.skipTrailedBy () ')'
+    False -> pure ()
   pure Endpoint{interface,address,port}
 
 parser302014 :: Parser () s P302014
