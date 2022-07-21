@@ -16,7 +16,7 @@ extra-source-files: CHANGELOG.md
 library
   exposed-modules: Cisco.Asa.Syslog
   build-depends:
-    , base >=4.13 && <4.15
+    , base >=4.13 && <5
     , byteslice >=0.2 && <0.3
     , bytesmith >=0.3.6 && <0.4
     , primitive-unlifted >=0.1.2 && <0.2
