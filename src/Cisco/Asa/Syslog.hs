@@ -187,7 +187,12 @@ decode = Parser.parseBytesMaybe parser
 
 parser :: Parser () s Message
 parser = do
-  Latin.char5 () '%' 'A' 'S' 'A' '-'
+  Latin.char () '%'
+  Latin.any () >>= \case
+    'A' -> Latin.char2 () 'S' 'A'
+    'F' -> Latin.char2 () 'T' 'D'
+    _ -> Parser.fail ()
+  Latin.char () '-'
   _ <- Latin.decWord ()
   Latin.char () '-'
   msgNum <- Latin.decWord ()
